@@ -8,9 +8,12 @@ VERSION : 0.1
 
    VAR_OUTPUT 
       PWM : Bool;
+      TimerOFF_ET : Time;
+      TimerON_ET : Time;
    END_VAR
 
    VAR 
+      RestartTimer : Bool;
       IsOnPhase : Bool;
       TimerOn {InstructionName := 'TON_TIME'; LibVersion := '1.0'; S7_SetPoint := 'False'} : TON_TIME;
       TimerOff {InstructionName := 'TON_TIME'; LibVersion := '1.0'; S7_SetPoint := 'False'} : TON_TIME;
@@ -18,8 +21,137 @@ VERSION : 0.1
 
 
 BEGIN
-	// Assuming #TimerOn and #TimerOff are correctly declared elsewhere as TON timers
+	#RestartTimer := ENO;
 	
+	// If neither timer is active and no phase is defined, assume starting in the "on" phase
+	IF NOT #TimerOn.IN AND NOT #TimerOff.IN THEN
+	    #IsOnPhase := TRUE;
+	END_IF;
+	
+	// Reset timers if both InputOnTime and InputOffTime are 0ms
+	IF #InputOnTime = T#0ms AND #InputOffTime = T#0ms THEN
+	    #TimerOn.IN := FALSE;
+	    #TimerOff.IN := FALSE;
+	    #TimerON_ET := T#0ms;
+	    #TimerOFF_ET := T#0ms;
+	    #PWM := FALSE;  // Ensure PWM is off if there are no timer durations set
+	    RETURN;  // Exit the function early to avoid further processing
+	END_IF;
+	
+	// At the beginning of your cycle, check if the block was not called and reset timers
+	IF NOT #RestartTimer THEN
+	    #TimerOn.IN := FALSE;
+	    #TimerOff.IN := FALSE;
+	    #TimerON_ET := T#0ms;
+	    #TimerOFF_ET := T#0ms;
+	END_IF;
+	
+	IF #IsOnPhase THEN
+	    #RestartTimer := TRUE; // Mark that the block has been called
+	    
+	    IF #InputOnTime <> T#0ms THEN
+	        #TimerOn(IN := TRUE,
+	                 PT := #InputOnTime);
+	        
+	        // Update the elapsed time for TimerOn when active
+	        #TimerON_ET := #TimerOn.ET;
+	        
+	        IF #TimerOn.Q THEN
+	            #PWM := FALSE;  // Turn off the signal
+	            #IsOnPhase := FALSE;     // Switch to Off phase
+	            #TimerOn.IN := FALSE;   // Reset the ON timer by setting IN to FALSE
+	            IF #InputOffTime <> T#0ms THEN
+	                #TimerOff(IN := TRUE,
+	                          PT := #InputOffTime);  // Prepare and start the Off timer
+	            END_IF;
+	        ELSE
+	            #PWM := TRUE;   // Keep the signal On
+	        END_IF;
+	    ELSE
+	        #PWM := FALSE;  // Ensure PWM is off if the timer duration is zero
+	    END_IF;
+	ELSE
+	    #RestartTimer := TRUE; // Mark that the block has been called
+	    
+	    IF #InputOffTime <> T#0ms THEN
+	        #TimerOff(IN := TRUE,
+	                  PT := #InputOffTime);
+	        
+	        // Update the elapsed time for TimerOff when active
+	        #TimerOFF_ET := #TimerOff.ET;
+	        
+	        IF #TimerOff.Q THEN
+	            #PWM := TRUE;   // Turn on the signal
+	            #IsOnPhase := TRUE;      // Switch to On phase
+	            #TimerOff.IN := FALSE;  // Reset the OFF timer by setting IN to FALSE
+	            IF #InputOnTime <> T#0ms THEN
+	                #TimerOn(IN := TRUE,
+	                         PT := #InputOnTime);    // Prepare and start the On timer
+	            END_IF;
+	        ELSE
+	            #PWM := FALSE;  // Keep the signal Off
+	        END_IF;
+	    ELSE
+	        #PWM := FALSE;  // Ensure PWM is off if the timer duration is zero
+	    END_IF;
+	END_IF;
+	
+	
+	
+	
+	
+	
+	
+	
+	(* version 2
+	IF #IsOnPhase THEN
+	    // Check if InputOnTime is not zero before starting the timer
+	    IF #InputOnTime <> T#0ms THEN
+	        #TimerOn(IN := TRUE,
+	                 PT := #InputOnTime);
+	        
+	        IF #TimerOn.Q THEN
+	            #PWM := FALSE;  // Turn off the signal
+	            #IsOnPhase := FALSE;     // Switch to Off phase
+	            #TimerOn.IN := FALSE;   // Reset the ON timer by setting IN to FALSE
+	            // Check if InputOffTime is not zero before restarting the Off timer
+	            IF #InputOffTime <> T#0ms THEN
+	                #TimerOff(IN := TRUE,
+	                          PT := #InputOffTime);  // Prepare and start the Off timer
+	            END_IF;
+	        ELSE
+	            #PWM := TRUE;   // Keep the signal On
+	        END_IF;
+	    ELSE
+	        #PWM := FALSE;  // Ensure PWM is off if the timer duration is zero
+	    END_IF;
+	ELSE
+	    // Check if InputOffTime is not zero before starting the timer
+	    IF #InputOffTime <> T#0ms THEN
+	        #TimerOff(IN := TRUE,
+	                  PT := #InputOffTime,
+	                  ET => #TimerOFF_ET);
+	        IF #TimerOff.Q THEN
+	            #PWM := TRUE;   // Turn on the signal
+	            #IsOnPhase := TRUE;      // Switch to On phase
+	            #TimerOff.IN := FALSE;  // Reset the OFF timer by setting IN to FALSE
+	            // Check if InputOnTime is not zero before restarting the On timer
+	            IF #InputOnTime <> T#0ms THEN
+	                #TimerOn(IN := TRUE,
+	                         PT := #InputOnTime);    // Prepare and start the On timer
+	            END_IF;
+	        ELSE
+	            #PWM := FALSE;  // Keep the signal Off
+	        END_IF;
+	    ELSE
+	        #PWM := FALSE;  // Ensure PWM is off if the timer duration is zero
+	    END_IF;
+	END_IF;
+	*)
+	
+	
+	
+	(* Version 1
 	IF #IsOnPhase THEN
 	    // Start the ON timer
 	    #TimerOn(IN := TRUE,
@@ -38,8 +170,8 @@ BEGIN
 	ELSE
 	    // Start the OFF timer
 	    #TimerOff(IN := TRUE,
-	              PT := #InputOffTime);
-	    
+	              PT := #InputOffTime,
+	              ET => #TimerOffET);
 	    IF #TimerOff.Q THEN
 	        #PWM := TRUE;   // Turn on the signal
 	        #IsOnPhase := TRUE;      // Switch to On phase
@@ -51,8 +183,7 @@ BEGIN
 	        #PWM := FALSE;  // Keep the signal Off
 	    END_IF;
 	END_IF;
-	
-	
+	*)
 	
 	
 	

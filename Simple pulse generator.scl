@@ -1,0 +1,80 @@
+﻿FUNCTION_BLOCK "Simple pulse generator"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT 
+      InputOnTime : Time;
+      InputOffTime : Time;
+   END_VAR
+
+   VAR_OUTPUT 
+      PWM : Bool;
+   END_VAR
+
+   VAR 
+      IsOnPhase : Bool;
+      TimerOn {InstructionName := 'TON_TIME'; LibVersion := '1.0'; S7_SetPoint := 'False'} : TON_TIME;
+      TimerOff {InstructionName := 'TON_TIME'; LibVersion := '1.0'; S7_SetPoint := 'False'} : TON_TIME;
+   END_VAR
+
+
+BEGIN
+	// Assuming #TimerOn and #TimerOff are correctly declared elsewhere as TON timers
+	
+	IF #IsOnPhase THEN
+	    // Start the ON timer
+	    #TimerOn(IN := TRUE,
+	             PT := #InputOnTime);
+	    
+	    IF #TimerOn.Q THEN
+	        #PWM := FALSE;  // Turn off the signal
+	        #IsOnPhase := FALSE;     // Switch to Off phase
+	        #TimerOn.IN := FALSE;   // Reset the ON timer by setting IN to FALSE
+	        // Delay or cycle must occur here before restarting the timer
+	        #TimerOff(IN := TRUE,
+	                  PT := #InputOffTime);  // Prepare and start the Off timer
+	    ELSE
+	        #PWM := TRUE;   // Keep the signal On
+	    END_IF;
+	ELSE
+	    // Start the OFF timer
+	    #TimerOff(IN := TRUE,
+	              PT := #InputOffTime);
+	    
+	    IF #TimerOff.Q THEN
+	        #PWM := TRUE;   // Turn on the signal
+	        #IsOnPhase := TRUE;      // Switch to On phase
+	        #TimerOff.IN := FALSE;  // Reset the OFF timer by setting IN to FALSE
+	        // Delay or cycle must occur here before restarting the timer
+	        #TimerOn(IN := TRUE,
+	                 PT := #InputOnTime);    // Prepare and start the On timer
+	    ELSE
+	        #PWM := FALSE;  // Keep the signal Off
+	    END_IF;
+	END_IF;
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+END_FUNCTION_BLOCK
+
